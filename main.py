@@ -88,11 +88,11 @@ seed                        = 1234
 '''
 
 if data_mode == 'PBC2':
-    (x_dim, x_dim_cont, x_dim_bin), (data, time, label), (mask1, mask2, mask3), (data_mi) = impt.import_dataset(norm_mode = 'standard')
+    (x_dim, x_dim_cont, x_dim_bin), (data, time, label), (mask1, mask2, mask3), (data_mi), (id) = impt.import_dataset(path = './data/Precar_DDH8.csv', norm_mode = 'standard')
     
     # This must be changed depending on the datasets, prediction/evaliation times of interest
-    pred_time = [52, 3*52, 5*52] # prediction time (in months)
-    eval_time = [12, 36, 60, 120] # months evaluation time (for C-index and Brier-Score)
+    pred_time = [6, 2*6] # prediction time (in months)
+    eval_time = [1, 7, 13, 19, 25] # months evaluation time (for C-index and Brier-Score)
 else:
     print ('ERROR:  DATA_MODE NOT FOUND !!!')
 
@@ -118,8 +118,8 @@ boost_mode                  = 'ON' #{'ON', 'OFF'}
 ##### HYPER-PARAMETERS
 new_parser = {'mb_size': 32,
 
-             'iteration_burn_in': 3000,
-             'iteration': 25000,
+             'iteration_burn_in': 30000,
+             'iteration': 70000,
 
              'keep_prob': 0.6,
              'lr_train': 1e-4,
@@ -190,8 +190,28 @@ save_logging(new_parser, log_name)
 
 
 ### TRAINING-TESTING SPLIT
-(tr_data,te_data, tr_data_mi, te_data_mi, tr_time,te_time, tr_label,te_label, 
- tr_mask1,te_mask1, tr_mask2,te_mask2, tr_mask3,te_mask3) = train_test_split(data, data_mi, time, label, mask1, mask2, mask3, test_size=0.2, random_state=seed) 
+# here let us perform the train test split with Fan's way
+tr_data = data[58:2191, ]
+tr_data_mi = data_mi[58:2191, ]
+tr_time = time[58:2191, ]
+tr_label = label[58:2191, ]
+tr_mask1 = mask1[58:2191, ]
+tr_mask2 = mask2[58:2191, ]
+tr_mask3 = mask3[58:2191, ]
+
+# a function to de-select selected index
+def desub(dat, idx1, idx2): 
+    dat1 = dat[0:idx1, ]
+    dat2 = dat[idx2:, ]
+    return np.vstack((dat1, dat2))
+
+te_data = desub(data, 57, 2192)
+te_data_mi = desub(data, 57, 2192)
+te_time = desub(time, 57, 2192)
+te_label = desub(label, 57, 2192)
+te_mask1 = desub(mask1, 57, 2192)
+te_mask2 = desub(mask2, 57, 2192)
+te_mask3 = desub(mask3, 57, 2192)
 
 (tr_data,va_data, tr_data_mi, va_data_mi, tr_time,va_time, tr_label,va_label, 
  tr_mask1,va_mask1, tr_mask2,va_mask2, tr_mask3,va_mask3) = train_test_split(tr_data, tr_data_mi, tr_time, tr_label, tr_mask1, tr_mask2, tr_mask3, test_size=0.2, random_state=seed) 
@@ -199,8 +219,8 @@ save_logging(new_parser, log_name)
 if boost_mode == 'ON':
     tr_data, tr_data_mi, tr_time, tr_label, tr_mask1, tr_mask2, tr_mask3 = f_get_boosted_trainset(tr_data, tr_data_mi, tr_time, tr_label, tr_mask1, tr_mask2, tr_mask3)
 
-
-# ### 4. Train the Networ
+    
+# ### 4. Train the Network
 
 # In[ ]:
 
@@ -274,7 +294,58 @@ for itr in range(iteration):
             print( 'updated.... average c-index = ' + str('%.4f' %(tmp_valid)))
 
 
-# ### 5. Test the Trained Network
+            
+# ### 5. Test the Trained Network (in train)
+
+# In[ ]:
+
+
+saver.restore(sess, file_path + '/model')
+
+risk_all = f_get_risk_predictions(sess, model, te_data, te_data_mi, pred_time, eval_time)
+
+for p, p_time in enumerate(pred_time):
+    pred_horizon = int(p_time)
+    result1, result2 = np.zeros([num_Event, len(eval_time)]), np.zeros([num_Event, len(eval_time)])
+
+    for t, t_time in enumerate(eval_time):                
+        eval_horizon = int(t_time) + pred_horizon
+        for k in range(num_Event):
+            result1[k, t] = c_index(risk_all[k][:, p, t], te_time, (te_label[:,0] == k+1).astype(int), eval_horizon) #-1 for no event (not comparable)
+            result2[k, t] = brier_score(risk_all[k][:, p, t], te_time, (te_label[:,0] == k+1).astype(int), eval_horizon) #-1 for no event (not comparable)
+    
+    if p == 0:
+        final1, final2 = result1, result2
+    else:
+        final1, final2 = np.append(final1, result1, axis=0), np.append(final2, result2, axis=0)
+        
+        
+row_header = []
+for p_time in pred_time:
+    for t in range(num_Event):
+        row_header.append('pred_time {}: event_{}'.format(p_time,k+1))
+            
+col_header = []
+for t_time in eval_time:
+    col_header.append('eval_time {}'.format(t_time))
+
+# c-index result
+df1 = pd.DataFrame(final1, index = row_header, columns=col_header)
+
+# brier-score result
+df2 = pd.DataFrame(final2, index = row_header, columns=col_header)
+
+### PRINT RESULTS
+print('========================================================')
+print('--------------------------------------------------------')
+print('- C-INDEX: ')
+print(df1)
+print('--------------------------------------------------------')
+print('- BRIER-SCORE: ')
+print(df2)
+print('========================================================')
+            
+# ### 6. Test the Trained Network (in test)
 
 # In[ ]:
 

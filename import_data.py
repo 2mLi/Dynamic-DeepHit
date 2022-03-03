@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import math
 
 
 
@@ -77,51 +78,58 @@ def f_get_fc_mask3(time, meas_time, num_Category):
 ##### TRANSFORMING DATA
 def f_construct_dataset(df, feat_list):
     '''
-        id   : patient indicator
+        Patient   : patient indicator
         tte  : time-to-event or time-to-censoring
             - must be synchronized based on the reference time
+            - == Times
         times: time at which observations are measured
             - must be synchronized based on the reference time (i.e., times start from 0)
+            - == Time
         label: event/censoring information
             - 0: censoring
             - 1: event type 1
             - 2: event type 2
             ...
+            - == Status
     '''
 
-    grouped  = df.groupby(['id'])
-    id_list  = pd.unique(df['id'])
+    grouped  = df.groupby(['ID'])
+    id_list  = pd.unique(df['ID'])
     max_meas = np.max(grouped.count())[0]
 
     data     = np.zeros([len(id_list), max_meas, len(feat_list)+1])
-    pat_info = np.zeros([len(id_list), 5])
+    pat_info = np.zeros([len(id_list), 6])
 
     for i, tmp_id in enumerate(id_list):
         tmp = grouped.get_group(tmp_id).reset_index(drop=True)
 
         pat_info[i,4] = tmp.shape[0]                                   #number of measurement
-        pat_info[i,3] = np.max(tmp['times'])     #last measurement time
-        pat_info[i,2] = tmp['label'][0]      #cause
-        pat_info[i,1] = tmp['tte'][0]         #time_to_event
-        pat_info[i,0] = tmp['id'][0]      
+        pat_info[i,3] = np.max(tmp['Time'])     #last measurement time
+        pat_info[i,2] = tmp['Status'][0]      #cause
+        pat_info[i,1] = tmp['Times'][0]         #time_to_event
+        pat_info[i,0] = tmp['ID'][0] 
+        
+        # pat_info[i,5] = tmp['Patient'][0] # Patient ID as strings. necessary for internal/external validation
 
         data[i, :int(pat_info[i, 4]), 1:]  = tmp[feat_list]
-        data[i, :int(pat_info[i, 4]-1), 0] = np.diff(tmp['times'])
+        data[i, :int(pat_info[i, 4]-1), 0] = np.diff(tmp['Time'])
     
     return pat_info, data
 
 
-def import_dataset(norm_mode = 'standard'):
+def import_dataset(path, norm_mode = 'standard'):
+    # exmplar path: './data/Precar_DDH8.csv'
+    df_                = pd.read_csv(path)
 
-    df_                = pd.read_csv('./data/pbc2_cleaned.csv')
-
-    bin_list           = ['drug', 'sex', 'ascites', 'hepatomegaly', 'spiders']
-    cont_list          = ['age', 'edema', 'serBilir', 'serChol', 'albumin', 'alkaline', 'SGOT', 'platelets', 'prothrombin', 'histologic']
+    bin_list           = ['Gender']
+    cont_list          = [ 'Afp', 'Age', 'HIFI']
     feat_list          = cont_list + bin_list
-    df_                = df_[['id', 'tte', 'times', 'label']+feat_list]
+    df_                = df_[['ID', 'Times', 'Time', 'Status']+feat_list]
     df_org_            = df_.copy(deep=True)
 
-    df_[cont_list]     = f_get_Normalization(np.asarray(df_[cont_list]).astype(float), norm_mode)
+    # df_[cont_list]     = f_get_Normalization(np.asarray(df_[cont_list]).astype(float), norm_mode)
+    df_['Afp'] = np.log10(df_['Afp'] + 0.00001)
+    # df_['Index'] = np.log10(df_['Index'])
 
     pat_info, data     = f_construct_dataset(df_, feat_list)
     _, data_org        = f_construct_dataset(df_org_, feat_list)
@@ -154,4 +162,4 @@ def import_dataset(norm_mode = 'standard'):
     # DATA            = (data, data_org, time, label)
     MASK            = (mask1, mask2, mask3)
 
-    return DIM, DATA, MASK, data_mi
+    return DIM, DATA, MASK, data_mi, pat_info[:, 0]
