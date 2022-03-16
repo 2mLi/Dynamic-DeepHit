@@ -123,11 +123,15 @@ _, num_Event, num_Category  = np.shape(tr_mask1)  # dim of mask3: [subj, Num_Eve
 max_length                  = np.shape(tr_data)[1]
 
 
-file_path = '{}'.format(data_mode)
+mode_path = '{}'.format(data_mode)
+
+if not os.path.exists(mode_path):
+    os.makedirs(mode_path)
+
+file_path = mode_path + '/' + time_tag + '_' + new_parser['reference']
 
 if not os.path.exists(file_path):
     os.makedirs(file_path)
-
 
 # ### 2. Set Hyper-Parameters
 # ##### - Play with your own hyper-parameters!
@@ -177,7 +181,7 @@ beta              = new_parser['beta']
 gamma             = new_parser['gamma']
 
 # SAVE HYPERPARAMETERS
-log_name = file_path + '/' + time_tag + '_' + new_parser['reference'] + '_log.json'
+log_name = file_path + '/' + '_log.json'
 log_file = params
 with open(log_name, 'w') as f:
     json.dump(log_file, f)
@@ -205,7 +209,10 @@ c_track_improve_idx = [0]
 ##### CREATE DYNAMIC-DEEPFHT NETWORK
 tf.reset_default_graph()
 
-config = tf.ConfigProto()
+config = tf.ConfigProto(device_count={"CPU": 8}, # limit to num_cpu_core CPU usage
+                inter_op_parallelism_threads = 200, 
+                intra_op_parallelism_threads = 200,
+                log_device_placement=True)
 config.gpu_options.allow_growth = True
 sess = tf.Session(config=config)
 
@@ -283,7 +290,7 @@ for itr in range(iteration):
 
         if tmp_valid >  min_valid:
             min_valid = tmp_valid
-            saver.save(sess, file_path + '/' + time_tag + '_' + new_parser['reference'] + 'model')
+            saver.save(sess, file_path + '/model')
             print( 'updated.... average c-index = ' + str('%.4f' %(tmp_valid)))
             c_track.append(tmp_valid)
             c_track_improve_idx.append(itr)
