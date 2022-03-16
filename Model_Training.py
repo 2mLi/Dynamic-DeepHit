@@ -302,7 +302,7 @@ train_results      = {'val_c_idx': tmp_valid,
                 'params_used': new_parser}
 log_file['train_results'] = train_results
 with open(log_name, 'w') as f:
-    json.dump(log_file, f)
+    json.dump(str(log_file), f)
     
 
 print('Dynamic-DeepHit training completed. Results saved at ' + file_path)
