@@ -1,0 +1,77 @@
+{
+    "new_parser": {
+        "mb_size": 32,
+
+        "iteration_burn_in": 30000,
+        "iteration": 70000,
+
+        "keep_prob": 0.6,
+        "lr_train": 1e-4,
+
+        "h_dim_RNN": 100, 
+        "h_dim_FC" : 100,
+        "num_layers_RNN":2,
+        "num_layers_ATT":2,
+        "num_layers_CS":2,
+
+        "RNN_type": "LSTM", 
+
+        "FC_active_fn": "relu", 
+        "RNN_active_fn": "tanh", 
+
+        "reg_W": 1e-5,
+        "reg_W_out": 0,
+
+        "alpha": 1.0,
+        "beta": 0.1,
+        "gamma": 1.0, 
+
+        "reference": "my_aMAP_model"
+    }, 
+    
+
+
+
+    "dataset_info": {
+
+        "PreCar":"data/precar_tidyup_plus.csv",
+
+        "REALM":"data/precar_tidyup_plus.csv", 
+
+        "Search_B":"data/precar_tidyup_plus.csv"
+
+    }, 
+
+    "evaluation_info": {
+        "pred_time": [6, 12, 18, 24], 
+        "eval_time": [1, 7, 13, 19, 25]
+    }, 
+
+    "model_configs": {
+        "burnin_mode": "ON", 
+        "boost_mode": "ON", 
+        "early_stopping": {
+            "mode": "ON", 
+            "stopping_elapse": 20, 
+            "stopping_c_index": 1
+        }, 
+        "val_ratio": 0.6, 
+        "seed": 23333, 
+        "data_mode": "PreCar", 
+
+        "bin_list": ["Gender", "Asc"],
+        "cont_list": [ "Afp", "Age", "Alt", "Ast", "Ygt", "Alb", "Plt", "Tb","HIFI"], 
+        "log_transform": ["Afp", "Alt", "Ast", "Ygt", "Alb", "Plt", "Tb"]
+    }, 
+
+
+    "eval_configs": {
+        "train_eval": "ON", 
+        "test_eval": "ON", 
+        "longitudinal_att": "ON", 
+        "trace_total_loss": "ON", 
+        "trace_c_index": "ON"
+    }
+
+    
+}

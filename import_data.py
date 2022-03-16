@@ -117,19 +117,25 @@ def f_construct_dataset(df, feat_list):
     return pat_info, data
 
 
-def import_dataset(path, norm_mode = 'standard'):
+def import_dataset(path, bin_list_in, cont_list_in, log_list):
     # exmplar path: './data/Precar_DDH8.csv'
     df_                = pd.read_csv(path)
 
-    bin_list           = ['Gender']
-    cont_list          = [ 'Afp', 'Age', 'HIFI']
+    bin_list           = bin_list_in
+    cont_list          = cont_list_in
     feat_list          = cont_list + bin_list
+    # info_list          = info_list_in
     df_                = df_[['ID', 'Times', 'Time', 'Status']+feat_list]
     df_org_            = df_.copy(deep=True)
 
-    # df_[cont_list]     = f_get_Normalization(np.asarray(df_[cont_list]).astype(float), norm_mode)
-    df_['Afp'] = np.log10(df_['Afp'] + 0.00001)
-    # df_['Index'] = np.log10(df_['Index'])
+    # check if elements in log_list are all in the cont_list
+    # if yes, log-transform the variable; if not, print a warning
+    for yi in log_list: 
+        if yi in cont_list: 
+            df_[yi] = np.log10(df_[yi] + 0.00001)
+        else: 
+            print('Warning: logged variable does not exist in the specified list of continuous variables. Logging of the variable is omitted. ')
+    
 
     pat_info, data     = f_construct_dataset(df_, feat_list)
     _, data_org        = f_construct_dataset(df_org_, feat_list)
@@ -162,4 +168,4 @@ def import_dataset(path, norm_mode = 'standard'):
     # DATA            = (data, data_org, time, label)
     MASK            = (mask1, mask2, mask3)
 
-    return DIM, DATA, MASK, data_mi, pat_info[:, 0]
+    return DIM, DATA, MASK, data_mi, pat_info[:, 0], feat_list
