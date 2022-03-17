@@ -19,11 +19,56 @@ from utils_eval             import c_index, brier_score
 from utils_log              import save_logging, load_logging
 from utils_helper           import f_get_minibatch, f_get_boosted_trainset
 
+def _f_get_pred(sess, model, data, data_mi, pred_horizon):
+    """
+        predictions based on the prediction time.
+        create new_data and new_mask2 that are available previous or equal to the prediction time (no future measurements are used)
+    """
+    new_data    = np.zeros(np.shape(data))
+    new_data_mi = np.zeros(np.shape(data_mi))
+
+    meas_time = np.concatenate([np.zeros([np.shape(data)[0], 1]), np.cumsum(data[:, :, 0], axis=1)[:, :-1]], axis=1)
+
+    for i in range(np.shape(data)[0]):
+        last_meas = np.sum(meas_time[i, :] <= pred_horizon)
+
+        new_data[i, :last_meas, :]    = data[i, :last_meas, :]
+        new_data_mi[i, :last_meas, :] = data_mi[i, :last_meas, :]
+
+    return model.predict(new_data, new_data_mi)
+
+
+def f_get_risk_predictions(sess, model, data_, data_mi_, pred_time, eval_time):
+    
+    pred = _f_get_pred(sess, model, data_[[0]], data_mi_[[0]], 0)
+    _, num_Event, num_Category = np.shape(pred)
+       
+    risk_all = {}
+    for k in range(num_Event):
+        risk_all[k] = np.zeros([np.shape(data_)[0], len(pred_time), len(eval_time)])
+            
+    for p, p_time in enumerate(pred_time):
+        ### PREDICTION
+        pred_horizon = int(p_time)
+        pred = _f_get_pred(sess, model, data_, data_mi_, pred_horizon)
+
+
+        for t, t_time in enumerate(eval_time):
+            eval_horizon = int(t_time) + pred_horizon #if eval_horizon >= num_Category, output the maximum...
+
+            # calculate F(t | x, Y, t >= t_M) = \sum_{t_M <= \tau < t} P(\tau | x, Y, \tau > t_M)
+            risk = np.sum(pred[:,:,pred_horizon:(eval_horizon+1)], axis=2) #risk score until eval_time
+            risk = risk / (np.sum(np.sum(pred[:,:,pred_horizon:], axis=2), axis=1, keepdims=True) +_EPSILON) #conditioniong on t > t_pred
+            
+            for k in range(num_Event):
+                risk_all[k][:, p, t] = risk[:, k]
+                
+    return risk_all
+
 ## cmd args: 
-# argv[0]: Model_evaluation.py
-# argv[1]: address of sess model; must be created by Model_Training.py
-# argv[2]: params used to build Model_Training.py
-# for now, the user must make sure argv[2] is the one used to construct argv[1]
+# now only one argument is needed
+# this will be something like "PreCar"
+# and the machine will know to find all relevant materials from the "PreCar" directory
 
 
 
@@ -32,17 +77,56 @@ from utils_helper           import f_get_minibatch, f_get_boosted_trainset
 ### the following codes read model training results plus needed data from Model_Training.py
 # and theoretically can be used to re-construct everything needed? 
 
+'''
 saver.restore(sess, sys.argv[1])
 with open(sys.argv[2]) as p: 
     params = json.load(p)
-    
-    
+'''
+
+# argv[1] is the data_mode: eg if PreCar, the program will read it from the PreCar file
+# argv[2], if left empty, will choose the most recent log
+# if argv[2] is specified, will use the string to find relevant log
+
+data_mode_name = sys.argv[1]
+
+if len(sys.argv) < 3: 
+    # this means no argv[2] is given; we use the most recent log
+    # to do so, for now lets just use max argument
+    # firstly, take out all log.json documents
+    logs = os.listdir(data_mode_name)
+    # logs is a list of all available logs; find the most recent one...
+    target_dir = data_mode_name + '/' + max(logs)
+    print('Using the most recent _log.json by default, since no specification is given. ')
+else: 
+    # assume that argv[2] has specified a keyword, use the keyword to identify logs
+    logs = os.listdir(data_mode_name)
+    matched = [i for i in logs if sys.argv[2] in i]
+    if len(matched) >= 2: 
+        print('Warning: more than one log is matched with the keyword and the most recent one will be used. ')
+        matched = max(matched)
+    target_dir = data_mode_name + '/' + matched
+
+# read log
+with open(target_dir + '/' + '_log.json') as p: 
+    params = json.load(p)
+mod_dir = target_dir + '/' + 'model'
+
+# print(type(params))
 new_parser = params['new_parser']
 dataset_info = params['dataset_info']
 evaluation_info = params['evaluation_info']
 model_configs = params['model_configs']
 eval_configs = params['eval_configs']
 time_tag = params['new_parser']['time_tag']
+
+dirs = dataset_info
+test_dir = []
+data_mode = data_mode_name
+for key in list(dirs.keys()): 
+    if key == data_mode: 
+        train_dir = dirs[key]
+    else: 
+        test_dir.append(dirs[key])
 
 (tr_x_dim, tr_x_dim_cont, tr_x_dim_bin), (tr_data, tr_time, tr_label), (tr_mask1, tr_mask2, tr_mask3), (tr_data_mi), (tr_id), tr_feat_list = impt.import_dataset(path = train_dir, bin_list_in = model_configs['bin_list'], cont_list_in = model_configs['cont_list'], log_list = model_configs['log_transform'])
 
@@ -57,17 +141,57 @@ _, num_Event, num_Category  = np.shape(tr_mask1)  # dim of mask3: [subj, Num_Eve
 
 max_length                  = np.shape(tr_data)[1]
 
+#####
 
-file_path = '{}'.format(data_mode)
+# A little treat: print name (in dict) of dataset
+def get_key(val):
+    for key, value in dataset_info.items():
+         if val == value:
+             return key
+ 
+    return "There is no such Key"
 
-if not os.path.exists(file_path):
-    os.makedirs(file_path)
+train_name = get_key(train_dir)
+test1_name = get_key(test_dir[0])
+test2_name = get_key(test_dir[1])
+
 
 #####
 
+input_dims                  = { 'x_dim'         : tr_x_dim,
+                                'x_dim_cont'    : tr_x_dim_cont,
+                                'x_dim_bin'     : tr_x_dim_bin,
+                                'num_Event'     : num_Event,
+                                'num_Category'  : num_Category,
+                                'max_length'    : max_length }
+
+network_settings            = { 'h_dim_RNN'         : new_parser['h_dim_RNN'],
+                                'h_dim_FC'          : new_parser['h_dim_FC'],
+                                'num_layers_RNN'    : new_parser['num_layers_RNN'],
+                                'num_layers_ATT'    : new_parser['num_layers_ATT'],
+                                'num_layers_CS'     : new_parser['num_layers_CS'],
+                                'RNN_type'          : new_parser['RNN_type'],
+                                'FC_active_fn'      : tf.nn.relu,
+                                'RNN_active_fn'     : tf.nn.tanh,
+                                'initial_W'         : tf.contrib.layers.xavier_initializer(),
+
+                                'reg_W'             : new_parser['reg_W'],
+                                'reg_W_out'         : float(new_parser['reg_W_out'])
+                                 }
+
+tf.reset_default_graph()
+
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+sess = tf.Session(config=config)
+
+model = Model_Longitudinal_Attention(sess, "Dynamic-DeepHit", input_dims, network_settings)
+
+saver = tf.train.Saver()
+saver.restore(sess, mod_dir)
+
 # By default, at each landmark time and horizon, both c-index and Brier score will be computed
 # Results will be printed, and saved in a _log.txt document
-
 
 risk_all = f_get_risk_predictions(sess, model, tr_data, tr_data_mi, pred_time, eval_time)
 
@@ -78,8 +202,8 @@ for p, p_time in enumerate(pred_time):
     for t, t_time in enumerate(eval_time):                
         eval_horizon = int(t_time) + pred_horizon
         for k in range(num_Event):
-            result1[k, t] = c_index(risk_all[k][:, p, t], te_time, (te_label[:,0] == k+1).astype(int), eval_horizon) #-1 for no event (not comparable)
-            result2[k, t] = brier_score(risk_all[k][:, p, t], te_time, (te_label[:,0] == k+1).astype(int), eval_horizon) #-1 for no event (not comparable)
+            result1[k, t] = c_index(risk_all[k][:, p, t], tr_time, (tr_label[:,0] == k+1).astype(int), eval_horizon) #-1 for no event (not comparable)
+            result2[k, t] = brier_score(risk_all[k][:, p, t], tr_time, (tr_label[:,0] == k+1).astype(int), eval_horizon) #-1 for no event (not comparable)
     
     if p == 0:
         final1, final2 = result1, result2
@@ -104,6 +228,9 @@ df2 = pd.DataFrame(final2, index = row_header, columns=col_header)
 
 ### PRINT RESULTS
 print('========================================================')
+print('Train set internal validation')
+print('Data: ' + train_name)
+print('========================================================')
 print('--------------------------------------------------------')
 print('- C-INDEX: ')
 print(df1)
@@ -111,7 +238,21 @@ print('--------------------------------------------------------')
 print('- BRIER-SCORE: ')
 print(df2)
 print('========================================================')
-            
+
+# save df1 and df2
+eval_path = target_dir + '/eval'
+
+if not os.path.exists(eval_path):
+    os.makedirs(eval_path)
+
+# make a copy of our params in this eval_path, so that we know which params generate this
+with open(eval_path + '/params.json', 'w') as f:
+    json.dump(params, f)
+
+df1.to_csv(eval_path + '/' + 'Train_c_index.csv')
+
+df2.to_csv(eval_path + '/' + 'Train_Brier.csv')
+
 # Test the Trained Network (in test 1)
 
 risk_all = f_get_risk_predictions(sess, model, te_data, te_data_mi, pred_time, eval_time)
@@ -149,6 +290,9 @@ df2 = pd.DataFrame(final2, index = row_header, columns=col_header)
 
 ### PRINT RESULTS
 print('========================================================')
+print('Test set external validation')
+print('Data: ' + test1_name)
+print('========================================================')
 print('--------------------------------------------------------')
 print('- C-INDEX: ')
 print(df1)
@@ -157,6 +301,9 @@ print('- BRIER-SCORE: ')
 print(df2)
 print('========================================================')
 
+df1.to_csv(eval_path + '/' + 'Test_1_c_index.csv')
+
+df2.to_csv(eval_path + '/' + 'Test_1_Brier.csv')
 
 # Test the Trained Network (in test 2)
 
@@ -195,6 +342,9 @@ df2 = pd.DataFrame(final2, index = row_header, columns=col_header)
 
 ### PRINT RESULTS
 print('========================================================')
+print('Additional test set external validation')
+print('Data: ' + test2_name)
+print('========================================================')
 print('--------------------------------------------------------')
 print('- C-INDEX: ')
 print(df1)
@@ -202,3 +352,24 @@ print('--------------------------------------------------------')
 print('- BRIER-SCORE: ')
 print(df2)
 print('========================================================')
+
+df1.to_csv(eval_path + '/' + 'Test_2_c_index.csv')
+
+df2.to_csv(eval_path + '/' + 'Test_2_Brier.csv')
+
+    
+# let us put longitudinal attention here as well
+# for now, only longi attention in train set will be calculated
+
+att_train = model.predict_att(tr_data, tr_data_mi, keep_prob = new_parser['keep_prob'])
+# we also found that the more the model trains, fewer rows will be sumed as zero
+'''
+print(len(rs))
+print(rs[0:100])
+print(att_train[0:100,])
+'''
+
+rs = att_train.sum(axis = 1)
+print('Temporal attention completeness: ' + str(np.mean(rs)))
+log_name_att = eval_path + '/_longi_att__.txt'
+np.savetxt(log_name_att, att_train, delimiter = ",")
