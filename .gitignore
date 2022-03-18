@@ -1,2 +1,11 @@
 
 *.csv
+
+# ignore data
+data/
+
+# ignore params
+params/
+
+# ignore PreCar
+PreCar/
