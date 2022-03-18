@@ -1,5 +1,10 @@
 _EPSILON = 1e-08
 
+#### <<< Warning suppression>>> ###
+# import warnings
+# warnings.filterwarnings('deprecated')
+#### This makes the resulting log a lot nicer BUT could produce errors in very, very rare and unexpected circumstances. 
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -18,6 +23,11 @@ from class_DeepLongitudinal import Model_Longitudinal_Attention
 from utils_eval             import c_index, brier_score
 from utils_log              import save_logging, load_logging
 from utils_helper           import f_get_minibatch, f_get_boosted_trainset
+
+np.set_printoptions(threshold=np.inf)
+pd.set_option('display.max_rows',np.inf)
+pd.set_option('display.max_columns',np.inf)
+pd.set_option('display.width',np.inf)
 
 def _f_get_pred(sess, model, data, data_mi, pred_horizon):
     """
@@ -104,7 +114,8 @@ else:
     if len(matched) >= 2: 
         print('Warning: more than one log is matched with the keyword and the most recent one will be used. ')
         matched = max(matched)
-    target_dir = data_mode_name + '/' + matched
+    target_dir = data_mode_name + '/' + matched[0]
+
 
 # read log
 with open(target_dir + '/' + '_log.json') as p: 
@@ -225,6 +236,20 @@ df1 = pd.DataFrame(final1, index = row_header, columns=col_header)
 
 # brier-score result
 df2 = pd.DataFrame(final2, index = row_header, columns=col_header)
+
+### print what variables are used
+feat_list = model_configs['bin_list'] + model_configs['cont_list']
+
+print('========================================================')
+print('========================================================')
+print('========================================================')
+print('=')
+print('Used variables: ' + ", ".join(feat_list))
+if len(model_configs['log_transform']) >= 1: 
+    logged_var = [i for i in model_configs['log_transform'] if i in model_configs['cont_list']]
+    print('Log-transformed variables: ', ", ".join(logged_var))
+print('=')
+print('========================================================')
 
 ### PRINT RESULTS
 print('========================================================')
