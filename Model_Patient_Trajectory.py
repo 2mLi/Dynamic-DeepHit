@@ -14,6 +14,8 @@ import sys
 import json
 import time as timepackage
 
+from numpy import newaxis
+
 from sklearn.model_selection import train_test_split
 
 import import_data as impt
@@ -96,7 +98,7 @@ with open(sys.argv[2]) as p:
 
 data_mode_name = sys.argv[1]
 
-if len(sys.argv) < 3: 
+if len(sys.argv) < 6: 
     # this means no argv[2] is given; we use the most recent log
     # to do so, for now lets just use max argument
     # firstly, take out all log.json documents
@@ -201,197 +203,59 @@ saver.restore(sess, mod_dir)
 # By default, at each landmark time and horizon, both c-index and Brier score will be computed
 # Results will be printed, and saved in a _log.txt document
 
-risk_all = f_get_risk_predictions(sess, model, tr_data, tr_data_mi, pred_time, eval_time)
+# here, we superseded eval_time and pred_time: 
 
-for p, p_time in enumerate(pred_time):
-    pred_horizon = int(p_time)
-    result1, result2 = np.zeros([num_Event, len(eval_time)]), np.zeros([num_Event, len(eval_time)])
+if len(sys.argv) < 6: 
+    # this means no argv[2] is given; we use the most recent log
+    # then, new eval and pred time would be argument argv[2] and argv[3]
+    eval_time = float(sys.argv[2])
+    pred_time = float(sys.argv[3])
+    step = float(sys.argv[4])
+    pat_idx = int(sys.argv[5]) - 1
+else: 
+    eval_time = float(sys.argv[3])
+    pred_time = float(sys.argv[4])
+    step = float(sys.argv[5])
+    pat_idx = int(sys.argv[6]) - 1
+# for this patient... (in test set)
+# here, assume the patient comes from test set 1
+te_data_s = te_data[pat_idx, :, :]
+te_data_s = te_data_s[newaxis, :, :]
+te_data_mi_s = te_data[pat_idx, :, :]
+te_data_mi_s = te_data_mi_s[newaxis, :, :]
 
-    for t, t_time in enumerate(eval_time):                
-        eval_horizon = int(t_time) + pred_horizon
-        for k in range(num_Event):
-            result1[k, t] = c_index(risk_all[k][:, p, t], tr_time, (tr_label[:,0] == k+1).astype(int), eval_horizon) #-1 for no event (not comparable)
-            result2[k, t] = brier_score(risk_all[k][:, p, t], tr_time, (tr_label[:,0] == k+1).astype(int), eval_horizon) #-1 for no event (not comparable)
-    
-    if p == 0:
-        final1, final2 = result1, result2
-    else:
-        final1, final2 = np.append(final1, result1, axis=0), np.append(final2, result2, axis=0)
-        
-        
-row_header = []
-for p_time in pred_time:
-    for t in range(num_Event):
-        row_header.append('pred_time {}: event_{}'.format(p_time,k+1))
-            
-col_header = []
-for t_time in eval_time:
-    col_header.append('eval_time {}'.format(t_time))
+# modify the true pred_time
+steps = round(pred_time/step)
+true_eval_time = [step * i for i in range(steps)]
+true_eval_time.append(pred_time)
 
-# c-index result
-df1 = pd.DataFrame(final1, index = row_header, columns=col_header)
 
-# brier-score result
-df2 = pd.DataFrame(final2, index = row_header, columns=col_header)
 
-### print what variables are used
-feat_list = model_configs['bin_list'] + model_configs['cont_list']
+risk = f_get_risk_predictions(sess, model, te_data_s, te_data_mi_s, [pred_time], true_eval_time)
+risk = risk[0][0, 0, :]
 
-print('========================================================')
-print('========================================================')
-print('========================================================')
-print('=')
-print('Used variables: ' + ", ".join(feat_list))
-if len(model_configs['log_transform']) >= 1: 
-    logged_var = [i for i in model_configs['log_transform'] if i in model_configs['cont_list']]
-    print('Log-transformed variables: ', ", ".join(logged_var))
-print('=')
-print('========================================================')
+# remove float32 tag
+risk = [float(i) for i in risk]
 
-### PRINT RESULTS
-print('========================================================')
-print('Train set internal validation')
-print('Data: ' + train_name)
-print('========================================================')
-print('--------------------------------------------------------')
-print('- C-INDEX: ')
-print(df1)
-print('--------------------------------------------------------')
-print('- BRIER-SCORE: ')
-print(df2)
-print('========================================================')
+t = [i + eval_time for i in true_eval_time]
+t = [float(i) for i in t]
 
-# save df1 and df2
-eval_path = target_dir + '/eval'
+# this would be a string of risks
+# also export the longitudinal trajectory
+# to do so...
+export_file = {
+    "patient_idx": int(pat_idx + 1), 
+    "t": t, 
+    "risk": risk
+}
 
-if not os.path.exists(eval_path):
-    os.makedirs(eval_path)
+long_traj_dir = target_dir + '/eval/pat_long_traj/'
 
-# make a copy of our params in this eval_path, so that we know which params generate this
-with open(eval_path + '/params.json', 'w') as f:
-    json.dump(params, f)
+if not os.path.exists(long_traj_dir):
+    os.makedirs(long_traj_dir)
 
-df1.to_csv(eval_path + '/' + 'Train_c_index.csv')
+landmark_horizon_lab = 'L' + str(int(eval_time)) + 'H' + str(int(pred_time))
 
-df2.to_csv(eval_path + '/' + 'Train_Brier.csv')
+with open(long_traj_dir + landmark_horizon_lab + '_log.json', "w") as f:
+    json.dump(export_file, f)
 
-# Test the Trained Network (in test 1)
-
-risk_all = f_get_risk_predictions(sess, model, te_data, te_data_mi, pred_time, eval_time)
-
-for p, p_time in enumerate(pred_time):
-    pred_horizon = int(p_time)
-    result1, result2 = np.zeros([num_Event, len(eval_time)]), np.zeros([num_Event, len(eval_time)])
-
-    for t, t_time in enumerate(eval_time):                
-        eval_horizon = int(t_time) + pred_horizon
-        for k in range(num_Event):
-            result1[k, t] = c_index(risk_all[k][:, p, t], te_time, (te_label[:,0] == k+1).astype(int), eval_horizon) #-1 for no event (not comparable)
-            result2[k, t] = brier_score(risk_all[k][:, p, t], te_time, (te_label[:,0] == k+1).astype(int), eval_horizon) #-1 for no event (not comparable)
-    
-    if p == 0:
-        final1, final2 = result1, result2
-    else:
-        final1, final2 = np.append(final1, result1, axis=0), np.append(final2, result2, axis=0)
-        
-        
-row_header = []
-for p_time in pred_time:
-    for t in range(num_Event):
-        row_header.append('pred_time {}: event_{}'.format(p_time,k+1))
-            
-col_header = []
-for t_time in eval_time:
-    col_header.append('eval_time {}'.format(t_time))
-
-# c-index result
-df1 = pd.DataFrame(final1, index = row_header, columns=col_header)
-
-# brier-score result
-df2 = pd.DataFrame(final2, index = row_header, columns=col_header)
-
-### PRINT RESULTS
-print('========================================================')
-print('Test set external validation')
-print('Data: ' + test1_name)
-print('========================================================')
-print('--------------------------------------------------------')
-print('- C-INDEX: ')
-print(df1)
-print('--------------------------------------------------------')
-print('- BRIER-SCORE: ')
-print(df2)
-print('========================================================')
-
-df1.to_csv(eval_path + '/' + 'Test_1_c_index.csv')
-
-df2.to_csv(eval_path + '/' + 'Test_1_Brier.csv')
-
-# Test the Trained Network (in test 2)
-
-risk_all = f_get_risk_predictions(sess, model, tea_data, tea_data_mi, pred_time, eval_time)
-
-for p, p_time in enumerate(pred_time):
-    pred_horizon = int(p_time)
-    result1, result2 = np.zeros([num_Event, len(eval_time)]), np.zeros([num_Event, len(eval_time)])
-
-    for t, t_time in enumerate(eval_time):                
-        eval_horizon = int(t_time) + pred_horizon
-        for k in range(num_Event):
-            result1[k, t] = c_index(risk_all[k][:, p, t], tea_time, (tea_label[:,0] == k+1).astype(int), eval_horizon) #-1 for no event (not comparable)
-            result2[k, t] = brier_score(risk_all[k][:, p, t], tea_time, (tea_label[:,0] == k+1).astype(int), eval_horizon) #-1 for no event (not comparable)
-    
-    if p == 0:
-        final1, final2 = result1, result2
-    else:
-        final1, final2 = np.append(final1, result1, axis=0), np.append(final2, result2, axis=0)
-        
-        
-row_header = []
-for p_time in pred_time:
-    for t in range(num_Event):
-        row_header.append('pred_time {}: event_{}'.format(p_time,k+1))
-            
-col_header = []
-for t_time in eval_time:
-    col_header.append('eval_time {}'.format(t_time))
-
-# c-index result
-df1 = pd.DataFrame(final1, index = row_header, columns=col_header)
-
-# brier-score result
-df2 = pd.DataFrame(final2, index = row_header, columns=col_header)
-
-### PRINT RESULTS
-print('========================================================')
-print('Additional test set external validation')
-print('Data: ' + test2_name)
-print('========================================================')
-print('--------------------------------------------------------')
-print('- C-INDEX: ')
-print(df1)
-print('--------------------------------------------------------')
-print('- BRIER-SCORE: ')
-print(df2)
-print('========================================================')
-
-df1.to_csv(eval_path + '/' + 'Test_2_c_index.csv')
-
-df2.to_csv(eval_path + '/' + 'Test_2_Brier.csv')
-
-    
-# let us put longitudinal attention here as well
-# for now, only longi attention in train set will be calculated
-
-att_train = model.predict_att(tr_data, tr_data_mi, keep_prob = new_parser['keep_prob'])
-# we also found that the more the model trains, fewer rows will be sumed as zero
-'''
-print(len(rs))
-print(rs[0:100])
-print(att_train[0:100,])
-'''
-
-rs = att_train.sum(axis = 1)
-print('Temporal attention completeness: ' + str(np.mean(rs)))
-log_name_att = eval_path + '/_longi_att__.txt'
-np.savetxt(log_name_att, att_train, delimiter = ",")
