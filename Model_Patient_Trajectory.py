@@ -98,7 +98,7 @@ with open(sys.argv[2]) as p:
 
 data_mode_name = sys.argv[1]
 
-if len(sys.argv) < 6: 
+if len(sys.argv) < 8: 
     # this means no argv[2] is given; we use the most recent log
     # to do so, for now lets just use max argument
     # firstly, take out all log.json documents
@@ -205,23 +205,46 @@ saver.restore(sess, mod_dir)
 
 # here, we superseded eval_time and pred_time: 
 
-if len(sys.argv) < 6: 
+if len(sys.argv) < 8: 
     # this means no argv[2] is given; we use the most recent log
     # then, new eval and pred time would be argument argv[2] and argv[3]
     eval_time = float(sys.argv[2])
     pred_time = float(sys.argv[3])
     step = float(sys.argv[4])
-    pat_idx = int(sys.argv[5]) - 1
+    pat = int(sys.argv[5])
+    left_right = sys.argv[6] # {Left or Right}
 else: 
     eval_time = float(sys.argv[3])
     pred_time = float(sys.argv[4])
     step = float(sys.argv[5])
-    pat_idx = int(sys.argv[6]) - 1
+    pat = int(sys.argv[6])
+    left_right = sys.argv[7]
 # for this patient... (in test set)
-# here, assume the patient comes from test set 1
+# determine which set this is
+if left_right == "LEFT": 
+    te_id = list(te_id)
+    te_data = te_data
+    te_data_mi = te_data_mi
+elif left_right == "RIGHT": 
+    te_id = list(tea_id)
+    te_data = tea_data
+    te_data_mi = tea_data_mi
+else: 
+    print("left_right argument was not correctly specified. Assuming LEFT is taken. ")
+    te_id = list(te_id)
+    te_data = te_data
+    te_data_mi = te_data_mi
+
+# find pat_idx
+if pat in te_id: 
+    pat_idx = te_id.index(pat)
+else: 
+    print("The specified patient id was not found in the specified test set. Assuming the use of first patient in test set. ")
+    pat_idx = 0
+
 te_data_s = te_data[pat_idx, :, :]
 te_data_s = te_data_s[newaxis, :, :]
-te_data_mi_s = te_data[pat_idx, :, :]
+te_data_mi_s = te_data_mi[pat_idx, :, :]
 te_data_mi_s = te_data_mi_s[newaxis, :, :]
 
 # modify the true pred_time
@@ -229,10 +252,13 @@ steps = round(pred_time/step)
 true_eval_time = [step * i for i in range(steps)]
 true_eval_time.append(pred_time)
 
+# print(pred_time)
+# print(true_eval_time)
 
-
-risk = f_get_risk_predictions(sess, model, te_data_s, te_data_mi_s, [pred_time], true_eval_time)
-risk = risk[0][0, 0, :]
+risk = f_get_risk_predictions(sess, model, te_data_s, te_data_mi_s, [eval_time], true_eval_time)
+risk = risk[0]
+# print(risk.shape)
+risk = risk[0, 0, :]
 
 # remove float32 tag
 risk = [float(i) for i in risk]
@@ -244,7 +270,7 @@ t = [float(i) for i in t]
 # also export the longitudinal trajectory
 # to do so...
 export_file = {
-    "patient_idx": int(pat_idx + 1), 
+    "patient_idx": pat, 
     "t": t, 
     "risk": risk
 }
