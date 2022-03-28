@@ -245,15 +245,30 @@ rL = len(r) - 1
 AUCL = []
 for i in list(range(rL)): 
     AUCL.append(1/2 * (Lsens[i] + Lsens[i + 1]) * (Lspec[i + 1] - Lspec[i]))
+'''
+
 
 AUC = - sum(AUCL)
 AUC_name = str(np.round(AUC, decimals = 4))
 print("Time-varying AUC at landmark " + str(eval_time) + " with horizon " + str(pred_time) + ": " + AUC_name)
+'''
+
+from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc, roc_auc_score
+import stat_util    #Compute AUC with 95% confidence interval
+
+score, ci_lower, ci_upper, scores = stat_util.score_ci(label_tr, risk, score_fun=roc_auc_score,seed=142857)
+
+
+AUC_name = str(np.round(score, decimals = 3))
+AUC_UB = str(np.round(ci_upper, decimals = 3))
+AUC_LB = str(np.round(ci_lower, decimals = 3))
+print("Time-varying AUC at landmark " + str(eval_time) + " with horizon " + str(pred_time) + ": " + AUC_name + " (" + AUC_LB + ", " + AUC_UB + ")")
 
 # store results
 # firstly, deal with the fucking disgusting float32 stuff
 Lspec_to_save = [float(i) for i in Lspec]
 Lsens_to_save = [float(i) for i in Lsens]
+AUC = score
 AUC_to_save = float(AUC)
 r_to_save = [float(i) for i in r]
 tv_tr_log = {"spec": Lspec_to_save, 
@@ -268,11 +283,11 @@ if not os.path.exists(tvROC_dir):
     os.makedirs(tvROC_dir)
 
 landmark_horizon_lab = 'L' + str(eval_time) + 'H' + str(pred_time)
-with open(tvROC_dir + landmark_horizon_lab + '_log.json', "w") as f:
-    json.dump(tv_log, f)
+with open(tvROC_dir + landmark_horizon_lab + '_log_train.json', "w") as f:
+    json.dump(tv_tr_log, f)
 
 # plot bit
-Fig_name = tvROC_dir + landmark_horizon_lab + '_tvROC.png'
+Fig_name = tvROC_dir + landmark_horizon_lab + '_tvROC_train.png'
 from matplotlib import pyplot as plt
 
 
@@ -282,7 +297,95 @@ f.set_figheight(6)
 plt.xlabel('1 - Specificity')
 plt.ylabel('Sensitivity')
 plt.title('Landmark Time: ' + str(eval_time) + '; Horizon Time: '+ str(pred_time))
-plt.text(x = 0.7, y = 0.1, s = 'tvAUC: '+ AUC_name)
+plt.text(x = 0.4, y = 0.1, s = "tvAUC: "+ AUC_name + " (" + AUC_LB + ", " + AUC_UB + ")")
+
+plt.plot(Lspec, Lsens)
+# plt.show()
+plt.savefig(Fig_name)
+
+
+# for test: 
+risk = f_get_risk_predictions(sess, model, te_data, te_data_mi, [pred_time], [eval_time])
+risk = risk[0][:, 0, 0]
+
+# we need: label, time
+label = te_label[:, 0]
+time = te_time[:, 0]
+# true label: 
+label_te = label * (time <= pred_time + eval_time)
+
+# we need a discretised scale from 0 to 1
+r = np.arange(0, 1 + step, step)
+
+# at each scale, calculate sens and spec
+Lsens = []
+Lspec = []
+for ri in r: 
+    label_pred = risk >= ri # predicted label
+    sens = sum(label_pred * label_te)/sum(label_te)
+    spec = 1 - sum((1 - label_pred) * (1 - label_te))/sum(1 - label_te)
+    Lsens.append(sens)
+    Lspec.append(spec)
+
+# print(Lsens)
+# print(Lspec)
+
+# get AUC with trapezium rule
+'''
+rL = len(r) - 1
+AUCL = []
+for i in list(range(rL)): 
+    AUCL.append(1/2 * (Lsens[i] + Lsens[i + 1]) * (Lspec[i + 1] - Lspec[i]))
+
+AUC = - sum(AUCL)
+'''
+# here, an alternative using the stat_util.py
+
+from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc, roc_auc_score
+import stat_util    #Compute AUC with 95% confidence interval
+
+score, ci_lower, ci_upper, scores = stat_util.score_ci(label_te, risk, score_fun=roc_auc_score,seed=142857)
+
+
+AUC_name = str(np.round(score, decimals = 3))
+AUC_UB = str(np.round(ci_upper, decimals = 3))
+AUC_LB = str(np.round(ci_lower, decimals = 3))
+print("Time-varying AUC at landmark " + str(eval_time) + " with horizon " + str(pred_time) + ": " + AUC_name + " (" + AUC_LB + ", " + AUC_UB + ")")
+
+# store results
+# firstly, deal with the fucking disgusting float32 stuff
+Lspec_to_save = [float(i) for i in Lspec]
+Lsens_to_save = [float(i) for i in Lsens]
+AUC = score
+AUC_to_save = float(AUC)
+r_to_save = [float(i) for i in r]
+tv_tr_log = {"spec": Lspec_to_save, 
+"sens": Lsens_to_save, 
+"AUC": AUC_to_save, 
+"steps": r_to_save}
+
+# eval_path = target_dir + '/eval'
+tvROC_dir = target_dir + '/eval/tvROC/'
+
+if not os.path.exists(tvROC_dir):
+    os.makedirs(tvROC_dir)
+
+landmark_horizon_lab = 'L' + str(eval_time) + 'H' + str(pred_time)
+with open(tvROC_dir + landmark_horizon_lab + '_log_test.json', "w") as f:
+    json.dump(tv_tr_log, f)
+
+# plot bit
+Fig_name = tvROC_dir + landmark_horizon_lab + '_tvROC_test.png'
+from matplotlib import pyplot as plt
+
+
+f = plt.figure()
+f.set_figwidth(6)
+f.set_figheight(6)
+plt.xlabel('1 - Specificity')
+plt.ylabel('Sensitivity')
+plt.title('Landmark Time: ' + str(eval_time) + '; Horizon Time: '+ str(pred_time))
+plt.text(x = 0.4, y = 0.1, s = "tvAUC: "+ AUC_name + " (" + AUC_LB + ", " + AUC_UB + ")")
 
 plt.plot(Lspec, Lsens)
 # plt.show()
