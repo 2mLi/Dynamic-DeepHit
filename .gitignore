@@ -7,6 +7,5 @@ data/
 # ignore params
 params/
 
-# ignore PreCar
-PreCar/
-PBC2/
+
+.Rproj.user

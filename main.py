@@ -88,10 +88,10 @@ seed                        = 1234
 '''
 
 if data_mode == 'PBC2':
-    (x_dim, x_dim_cont, x_dim_bin), (data, time, label), (mask1, mask2, mask3), (data_mi), (id) = impt.import_dataset(path = './data/Precar_DDH8.csv', norm_mode = 'standard')
+    (x_dim, x_dim_cont, x_dim_bin), (data, time, label), (mask1, mask2, mask3), (data_mi), (id) = impt.import_dataset(path = './data/precar_tidyup_plus.csv', norm_mode = 'standard')
     
     # This must be changed depending on the datasets, prediction/evaliation times of interest
-    pred_time = [6, 2*6] # prediction time (in months)
+    pred_time = [6, 2*6, 3*6, 4*6] # prediction time (in months)
     eval_time = [1, 7, 13, 19, 25] # months evaluation time (for C-index and Brier-Score)
 else:
     print ('ERROR:  DATA_MODE NOT FOUND !!!')
@@ -114,19 +114,29 @@ if not os.path.exists(file_path):
 
 burn_in_mode                = 'ON' #{'ON', 'OFF'}
 boost_mode                  = 'ON' #{'ON', 'OFF'}
+early_stopping_mode         = 'ON' #{'ON', 'OFF'}
+
+import sys
+import time as timepackage
+sys_time = timepackage.gmtime()
+time_stamp = timepackage.strftime('%d_%b_%Y_%H%M%S_GMT', sys_time)
+
+# here is "chuan'can"
+x1 = int(sys.argv[1])
+x2 = int(sys.argv[2])
 
 ##### HYPER-PARAMETERS
 new_parser = {'mb_size': 32,
 
-             'iteration_burn_in': 30000,
-             'iteration': 70000,
+             'iteration_burn_in': 3000,
+             'iteration': 7000,
 
              'keep_prob': 0.6,
              'lr_train': 1e-4,
 
-             'h_dim_RNN': 100,
+             'h_dim_RNN': x1, 
              'h_dim_FC' : 100,
-             'num_layers_RNN':2,
+             'num_layers_RNN':x2,
              'num_layers_ATT':2,
              'num_layers_CS' :2,
 
@@ -140,7 +150,9 @@ new_parser = {'mb_size': 32,
 
              'alpha' :1.0,
              'beta'  :0.1,
-             'gamma' :1.0
+             'gamma' :1.0, 
+
+             'Time_stamp': time_stamp
 }
 
 
@@ -180,14 +192,13 @@ beta              = new_parser['beta']
 gamma             = new_parser['gamma']
 
 # SAVE HYPERPARAMETERS
-log_name = file_path + '/hyperparameters_log.txt'
+log_name = file_path + '/' + time_stamp + 'hyperparameters_log.txt'
 save_logging(new_parser, log_name)
 
 
 # ### 3. Split Dataset into Train/Valid/Test Sets
 
 # In[ ]:
-
 
 ### TRAINING-TESTING SPLIT
 # here let us perform the train test split with Fan's way
@@ -223,7 +234,9 @@ if boost_mode == 'ON':
 # ### 4. Train the Network
 
 # In[ ]:
-
+total_loss = []
+c_track = [0.5]
+c_track_improve_idx = [0]
 
 ##### CREATE DYNAMIC-DEEPFHT NETWORK
 tf.reset_default_graph()
@@ -255,8 +268,20 @@ if burn_in_mode == 'ON':
 ### TRAINING - MAIN
 print( "MAIN TRAINING ...")
 min_valid = 0.5
+tmp_valid = 0.5
+
+# early stopping
+if early_stopping_mode == 'ON': 
+    stop_round = 25 # multiplying this by 1000 is at which round we would stop
+    C_index_lim = 1 # 1 by default; >1 values makes no effect; when c index at val set reaches this thr, we stop training
+elp = 0
 
 for itr in range(iteration):
+        # if condition satisifed, stop training
+    if (elp > stop_round or tmp_valid >= C_index_lim): 
+        print('Training terminated early because of reaching early-stopping conditions. ')
+        break
+
     x_mb, x_mi_mb, k_mb, t_mb, m1_mb, m2_mb, m3_mb = f_get_minibatch(mb_size, tr_data, tr_data_mi, tr_label, tr_time, tr_mask1, tr_mask2, tr_mask3)
     DATA = (x_mb, k_mb, t_mb)
     MASK = (m1_mb, m2_mb, m3_mb)
@@ -264,6 +289,7 @@ for itr in range(iteration):
     PARAMETERS = (alpha, beta, gamma)
 
     _, loss_curr = model.train(DATA, MASK, MISSING, PARAMETERS, keep_prob, lr_train)
+    total_loss.append(loss_curr)
 
     if (itr+1)%1000 == 0:
         print('itr: {:04d} | loss: {:.4f}'.format(itr+1, loss_curr))
@@ -292,6 +318,26 @@ for itr in range(iteration):
             min_valid = tmp_valid
             saver.save(sess, file_path + '/model')
             print( 'updated.... average c-index = ' + str('%.4f' %(tmp_valid)))
+            c_track.append(tmp_valid)
+            c_track_improve_idx.append(itr)
+            elp = 0
+        else: 
+            elp = elp + 1
+
+# create needed directory for c-index result
+# here we stored the result for this model only
+C_index_file_path = file_path + "{}".format("/C_index/")
+if not os.path.exists(C_index_file_path):
+    os.makedirs(C_index_file_path)
+
+
+log_name_cidx = file_path + '/C_index/' + time_stamp + '_c__' + str(round(tmp_valid, 4))[2:] + '__.txt'
+output_dict = {'c_idx': tmp_valid, 
+                'c_track': c_track, 
+                'c_track_improve_idx': c_track_improve_idx, 
+                'total_loss': total_loss, 
+                'params_used': new_parser}
+save_logging(output_dict, log_name_cidx)
 
 
             
@@ -300,9 +346,9 @@ for itr in range(iteration):
 # In[ ]:
 
 
-saver.restore(sess, file_path + '/model')
+# saver.restore(sess, file_path + '/model')
 
-risk_all = f_get_risk_predictions(sess, model, te_data, te_data_mi, pred_time, eval_time)
+risk_all = f_get_risk_predictions(sess, model, tr_data, tr_data_mi, pred_time, eval_time)
 
 for p, p_time in enumerate(pred_time):
     pred_horizon = int(p_time)
@@ -350,7 +396,7 @@ print('========================================================')
 # In[ ]:
 
 
-saver.restore(sess, file_path + '/model')
+# saver.restore(sess, file_path + '/model')
 
 risk_all = f_get_risk_predictions(sess, model, te_data, te_data_mi, pred_time, eval_time)
 
@@ -394,4 +440,10 @@ print('--------------------------------------------------------')
 print('- BRIER-SCORE: ')
 print(df2)
 print('========================================================')
+
+## add codes to extract temporal attention matrix, which is exactly what we need
+
+att_train = model.predict_att(tr_data, tr_data_mi, keep_prob = 0.6)
+log_name_att = file_path + '/C_index/' + time_stamp + '_att__.txt'
+np.savetxt(log_name_att, att_train)
 

@@ -1,16 +1,16 @@
 {
     "new_parser": {
-        "mb_size": 32,
+        "mb_size": 2500,
 
-        "iteration_burn_in": 30000,
-        "iteration": 70000,
+        "iteration_burn_in": 3000,
+        "iteration": 7000,
 
         "keep_prob": 0.6,
         "lr_train": 1e-4,
 
-        "h_dim_RNN": 100, 
+        "h_dim_RNN": 150, 
         "h_dim_FC" : 100,
-        "num_layers_RNN":2,
+        "num_layers_RNN":3,
         "num_layers_ATT":2,
         "num_layers_CS":2,
 
@@ -26,7 +26,7 @@
         "beta": 0.1,
         "gamma": 1.0, 
 
-        "reference": "my_aMAP_model"
+        "reference": "my_model"
     }, 
     
 
@@ -34,11 +34,11 @@
 
     "dataset_info": {
 
-        "PreCar":"data/precar_tidyup_plus.csv",
+        "PreCar":"data/precar_Train_WGS_plus.csv",
 
-        "REALM":"data/precar_tidyup_plus.csv", 
+        "REALM":"data/precar_Test_WGS_plus.csv", 
 
-        "Search_B":"data/precar_tidyup_plus.csv"
+        "Search_B":"data/precar_Test_WGS_plus.csv"
 
     }, 
 
@@ -51,17 +51,17 @@
         "burnin_mode": "ON", 
         "boost_mode": "ON", 
         "early_stopping": {
-            "mode": "ON", 
+            "mode": "OFF", 
             "stopping_elapse": 20, 
             "stopping_c_index": 1
         }, 
-        "val_ratio": 0.6, 
+        "val_ratio": 0.2, 
         "seed": 23333, 
         "data_mode": "PreCar", 
 
-        "bin_list": ["Gender", "Asc"],
-        "cont_list": [ "Afp", "Age", "Alt", "Ast", "Ygt", "Alb", "Plt", "Tb","HIFI"], 
-        "log_transform": ["Afp", "Alt", "Ast", "Ygt", "Alb", "Plt", "Tb"]
+        "bin_list": ["Gender", "CNV_score"], 
+        "cont_list": ["Afp", "Age", "Alt", "Alb", "Plt", "Tb", "Inr", "NF_CT", "Fragment_CT", "motif_CT", "Comb_CT", "score"], 
+        "log_transform": ["Afp", "Alt", "Alb", "Plt", "Tb", "Inr", "Comb_CT", "score"]
     }, 
 
 

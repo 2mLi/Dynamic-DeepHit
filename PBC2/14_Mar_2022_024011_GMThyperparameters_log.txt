@@ -1,0 +1,19 @@
+mb_size:32
+iteration_burn_in:30000
+iteration:70000
+keep_prob:0.6
+lr_train:0.0001
+h_dim_RNN:140
+h_dim_FC:100
+num_layers_RNN:2
+num_layers_ATT:2
+num_layers_CS:2
+RNN_type:LSTM
+FC_active_fn:<function relu at 0x000001B6C2A1E9D8>
+RNN_active_fn:<function tanh at 0x000001B6C262C318>
+reg_W:1e-05
+reg_W_out:0.0
+alpha:1.0
+beta:0.1
+gamma:1.0
+Time_stamp:14_Mar_2022_024011_GMT

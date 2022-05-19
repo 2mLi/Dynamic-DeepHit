@@ -142,6 +142,37 @@ for key in list(dirs.keys()):
 
 (tea_x_dim, tea_x_dim_cont, tea_x_dim_bin), (tea_data, tea_time, tea_label), (tea_mask1, tea_mask2, tea_mask3), (tea_data_mi), (tea_id), tea_feat_list = impt.import_dataset(path = test_dir[1], bin_list_in = model_configs['bin_list'], cont_list_in = model_configs['cont_list'], log_list = model_configs['log_transform'])
 
+# check whether the dimension of tr_data, te_data and tea_data match
+# check for second dimension... 
+if tr_data.shape[1] > te_data.shape[1] : 
+    # this means te_data have fewer follow-ups than tr_data. For this, patch it up with vectors of zero. 
+    print('Test set [1] has fewer follow-ups than train set. Artificially generated follow-ups have been attached. ')
+    k = tr_data.shape[1] - te_data.shape[1]
+    for i in range(k): 
+        te_data = np.append(te_data, np.zeros(shape = (te_data.shape[0], 1, te_data.shape[2]), dtype = float), axis = 1) 
+        te_data_mi = np.append(te_data_mi, np.zeros(shape = (te_data_mi.shape[0], 1, te_data_mi.shape[2]), dtype = float), axis = 1) 
+
+if tr_data.shape[1] > tea_data.shape[1] : 
+    
+    print('Test set [2] has fewer follow-ups than train set. Artificially generated follow-ups have been attached. ')
+    k = tr_data.shape[1] - tea_data.shape[1]
+    for i in range(k): 
+        tea_data = np.append(tea_data, np.zeros(shape = (tea_data.shape[0], 1, tea_data.shape[2]), dtype = float), axis = 1) 
+        tea_data_mi = np.append(tea_data_mi, np.zeros(shape = (tea_data_mi.shape[0], 1, tea_data_mi.shape[2]), dtype = float), axis = 1) 
+
+# on the other hand what may happen if... 
+if tr_data.shape[1] < te_data.shape[1] : 
+    # this means te_data have fewer follow-ups than tr_data. For this, patch it up with vectors of zero. 
+    print('Test set [1] has fewer follow-ups than train set. Artificially curtailed excessive follow-ups to avoid critical failures. ')
+    te_data = te_data[:, range(tr_data.shape[1]), :]
+    te_data_mi = te_data_mi[:, range(tr_data_mi.shape[1]), :]
+
+if tr_data.shape[1] < tea_data.shape[1] : 
+    
+    print('Test set [2] has fewer follow-ups than train set. Artificially curtailed excessive follow-ups to avoid critical failures. ')
+    tea_data = tea_data[:, range(tr_data.shape[1]), :]
+    tea_data_mi = tea_data_mi[:, range(tr_data_mi.shape[1]), :]
+
 pred_time = evaluation_info['pred_time'] # prediction time (in months)
 eval_time = evaluation_info['eval_time'] # months evaluation time (for C-index and Brier-Score)
 
