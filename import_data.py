@@ -122,7 +122,7 @@ def f_construct_dataset(df, feat_list):
     return pat_info, data
 
 
-def import_dataset(path, bin_list_in, cont_list_in, log_list):
+def import_dataset(path, df_spec, bin_list_in, cont_list_in, log_list):
     # exmplar path: './data/Precar_DDH8.csv'
     df_                = pd.read_csv(path)
 
@@ -130,7 +130,7 @@ def import_dataset(path, bin_list_in, cont_list_in, log_list):
     cont_list          = cont_list_in
     feat_list          = cont_list + bin_list
     # info_list          = info_list_in
-    df_                = df_[['ID', 'Times', 'Time', 'Status']+feat_list]
+    df_                = df_[df_spec + feat_list]
     df_org_            = df_.copy(deep=True)
 
     # check if elements in log_list are all in the cont_list
